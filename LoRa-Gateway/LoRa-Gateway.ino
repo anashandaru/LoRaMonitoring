@@ -1,7 +1,8 @@
 // modified lora library by Sandeep Mistry for TTGO ESP32 Lora
 // lora receiverCallBack 915Mhz with OLED
 
-
+#include <ThingSpeak.h>
+#include <WiFi.h>
 #include <SPI.h>
 #include <LoRa.h>
 #include <Wire.h>  // Only needed for Arduino 1.6.5 and earlier
@@ -15,24 +16,28 @@
 #define DI0     26   // GPIO26 -- IRQ(Interrupt Request)
 #define BAND    915E6
 
-String outgoing, dstatus="Waiting Mesagge...";              // outgoing message
-byte msgCount = 0;            // count of outgoing messages
+int data;              // outgoing message
+String dstatus="Waiting Message...";
 byte localAddress = 0xBB;     // address of this device
 byte destination = 0xAA;      // destination to send to
-long lastSendTime = 0;        // last send time
-int interval = 2000;          // interval between sends
+long lastSendTime = 0;        // 
+int interval = 500;           // 
 
 //replace default pin  OLED_SDA=4, OLED_SCL=15 with  OLED_SDA=21, OLED_SCL=22
 #define OLED_SDA 4
 #define OLED_SCL 15
 #define OLED_RST 16
-
 #define LED_BUILTIN 2
 
-
+char ssid[] = "anashandaru";   // your network SSID (name) 
+char pass[] = "anashandaru";   // your network password
+unsigned long myChannelNumber = 785978;  // replace 0000000 with your channel number
+const char * myWriteAPIKey = "XHFH9125894EN04Y";   // replace XYZ with your channel write API Key
 
 // Initialize the OLED display using Wire library
 SSD1306Wire  display(0x3c, OLED_SDA, OLED_SCL); // OLED_SDA=4, OLED_SCL=15
+
+WiFiClient  client;
 
 int RxDataRSSI = 0;
 
@@ -53,12 +58,10 @@ void setup() {
   // aktivasi Oled END
 
   Serial.begin(115200);
-  while (!Serial);
-  Serial.println("LoRa Duplex with callback");
+  //while (!Serial);
+  Serial.println("LoRa 1ch-Gateway");
   SPI.begin(SCK, MISO, MOSI, SS);
   LoRa.setPins(SS, RST, DI0);
-
-  Serial.println("LoRa Receiver Callback");
 
   if (!LoRa.begin(BAND)) {
     Serial.println("Starting LoRa failed!");
@@ -66,27 +69,24 @@ void setup() {
   }
 
   // register the receive callback
-  LoRa.onReceive(onReceive);
+  //LoRa.onReceive(LoRa.parsePacket());
 
   // put the radio into receive mode
   LoRa.receive();
-  display.setFont(ArialMT_Plain_24);
-  display.drawString(0, 0, "HwThinker");
+  display.setFont(ArialMT_Plain_16);
+  display.drawString(0, 0, "GEOFISIKA-UGM");
   display.display();
   delay(1000);
   display.clear();
+
+  // Initialize ThingSpeak
+  WiFi.mode(WIFI_STA);   
+  ThingSpeak.begin(client);
+  connectWifi();
 }
 
 void loop() {
-//    if (millis() - lastSendTime > interval) {
-//    String message = "HeLoRa!";   // send a message
-//    sendMessage(message);
-//    Serial.println("Sending " + message);
-//    lastSendTime = millis();            // timestamp the message
-//    interval = random(2000) + 1000;     // 2-3 seconds
-//    LoRa.receive();                     // go back into receive mode
-//  }
-  printLCD(dstatus,0);
+    onReceive(LoRa.parsePacket());
 }
 
 void printLCD(String message, int line){
@@ -96,17 +96,6 @@ void printLCD(String message, int line){
   display.display();
 }
 
-void sendMessage(String outgoing) {
-  LoRa.beginPacket();                   // start packet
-  LoRa.write(destination);              // add destination address
-  LoRa.write(localAddress);             // add sender address
-  LoRa.write(msgCount);                 // add message ID
-  LoRa.write(outgoing.length());        // add payload length
-  LoRa.print(outgoing);                 // add payload
-  LoRa.endPacket();                     // finish packet and send it
-  msgCount++;                           // increment message ID
-}
-
 void onReceive(int packetSize) {
   if (packetSize == 0) return;          // if there's no packet, return
 
@@ -114,17 +103,12 @@ void onReceive(int packetSize) {
   int recipient = LoRa.read();          // recipient address
   byte sender = LoRa.read();            // sender address
   byte incomingMsgId = LoRa.read();     // incoming msg ID
-  byte incomingLength = LoRa.read();    // incoming msg length
 
-  String incoming = "";                 // payload of packet
+  int incoming = 0;                 // payload of packet
 
-  while (LoRa.available()) {            // can't use readString() in callback, so
-    incoming += (char)LoRa.read();      // add bytes one by one
-  }
-
-  if (incomingLength != incoming.length()) {   // check length for error
-    Serial.println("error: message length does not match length");
-    return;                             // skip rest of function
+  while (LoRa.available()) {
+    incoming <<= 8;                   // can't use readString() in callback, so
+    incoming |= LoRa.read();      // add bytes one by one
   }
 
   // if the recipient isn't this device or broadcast,
@@ -133,14 +117,40 @@ void onReceive(int packetSize) {
     return;                             // skip rest of function
   }
 
-  dstatus = incoming + String(incomingMsgId);
   // if message is for this device, or broadcast, print details:
   Serial.println("Received from: 0x" + String(sender, HEX));
   Serial.println("Sent to: 0x" + String(recipient, HEX));
   Serial.println("Message ID: " + String(incomingMsgId));
-  Serial.println("Message length: " + String(incomingLength));
-  Serial.println("Message: " + incoming);
+  Serial.print("Message: "); Serial.println(incoming);
   Serial.println("RSSI: " + String(LoRa.packetRssi()));
   Serial.println("Snr: " + String(LoRa.packetSnr()));
   Serial.println();
+
+  connectWifi();
+  writeThingSpeak(incoming);
+}
+
+void connectWifi(){
+    if(WiFi.status() != WL_CONNECTED){
+    Serial.print("Attempting to connect to SSID: ");
+    Serial.println("anashandaru");
+    while(WiFi.status() != WL_CONNECTED){
+      WiFi.begin(ssid, pass); // Connect to WPA/WPA2 network. Change this line if using open or WEP network
+      Serial.print(".");
+      delay(5000);     
+    } 
+    Serial.println("\nConnected.");
+  }
+}
+
+void writeThingSpeak(int number){
+  // Write to ThingSpeak. There are up to 8 fields in a channel, allowing you to store up to 8 different
+  // pieces of information in a channel.  Here, we write to field 1.
+  int x = ThingSpeak.writeField(myChannelNumber, 1, number, myWriteAPIKey);
+  if(x == 200){
+    Serial.println("Channel update successful.");
+  }
+  else{
+    Serial.println("Problem updating channel. HTTP error code " + String(x));
+  }
 }
