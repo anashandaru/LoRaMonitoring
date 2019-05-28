@@ -8,20 +8,49 @@
 #include <Wire.h>  // Only needed for Arduino 1.6.5 and earlier
 #include "SSD1306Wire.h" // legacy include: `#include "SSD1306.h"`
 
-#define SCK     5    // GPIO5  -- lora SCK
-#define MISO    19   // GPIO19 -- lora MISO
-#define MOSI    27   // GPIO27 -- lora MOSI
-#define SS      18   // GPIO18 -- lora CS
-#define RST     14   // GPIO14/12 -- RESET (If Lora does not work, replace it with GPIO14)
-#define DI0     26   // GPIO26 -- IRQ(Interrupt Request)
-#define BAND    915E6
+  #define SCK     5
+  #define MISO    19
+  #define MOSI    27
+  #define SS      18
+  #define RST     14
+  #define DI0     26
+  #define VBATPIN A9
+  #define BAND    915E6
+  #define SF      12
+  #define TXP     17
 
-int data;              // outgoing message
-String dstatus="Waiting Message...";
-byte localAddress = 0xBB;     // address of this device
-byte destination = 0xAA;      // destination to send to
-long lastSendTime = 0;        // 
-int interval = 500;           // 
+  #define DEBUG
+
+// set to DEBUG to activate Serial
+#ifdef DEBUG
+  #define DEBUG_WAIT           !Serial
+  #define DEBUG_PRINT(x)       Serial.print (x)
+  #define DEBUG_PRINT2(x,y)    Serial.print (x,y)
+  #define DEBUG_PRINTDEC(x)    Serial.print (x, DEC)
+  #define DEBUG_PRINTLN(x)     Serial.println (x)
+  #define DEBUG_PRINTLN2(x,y)  Serial.println (x,y)
+  #define DEBUG_START(x)       Serial.begin(x)
+  #define DEBUG_ATTACH()       USBDevice.attach();
+#else
+  #define DEBUG_WAIT           false
+  #define DEBUG_PRINT(x)
+  #define DEBUG_PRINT2(x,y)
+  #define DEBUG_PRINTDEC(x)
+  #define DEBUG_PRINTLN(x)
+  #define DEBUG_PRINTLN2(x,y)
+  #define DEBUG_START(x)
+  #define DEBUG_ATTACH()
+#endif
+
+  int _temp;
+  int _ph;
+  int _vbatSender;
+  int _vbatRepeater;
+  byte _msgCount;
+  byte _localAddress = 0xBB;
+  long _lastSendTime;
+  long _interval;
+
 
 //replace default pin  OLED_SDA=4, OLED_SCL=15 with  OLED_SDA=21, OLED_SCL=22
 #define OLED_SDA 4
@@ -37,11 +66,31 @@ const char * myWriteAPIKey = "XHFH9125894EN04Y";   // replace XYZ with your chan
 // Initialize the OLED display using Wire library
 SSD1306Wire  display(0x3c, OLED_SDA, OLED_SCL); // OLED_SDA=4, OLED_SCL=15
 
-WiFiClient  client;
-
-int RxDataRSSI = 0;
+WiFiClient client;
 
 void setup() {
+  // Start LoRa
+  SPI.begin(SCK, MISO, MOSI, SS);
+  
+  DEBUG_START(9600);
+  while (DEBUG_WAIT)
+
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH);
+
+  LoRa.setPins(SS,RST,DI0);
+  if (!LoRa.begin(BAND)) {
+    DEBUG_PRINTLN("Starting LoRa failed!");
+    while (1);
+  }
+
+  DEBUG_PRINTLN("LoRa init succeeded.");
+  
+  LoRa.setSpreadingFactor(SF);
+  LoRa.setTxPower(TXP);
+  
+  LoRa.receive();
+
   // START aktivas Oled
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(OLED_RST , OUTPUT);
@@ -57,22 +106,7 @@ void setup() {
   display.clear();
   // aktivasi Oled END
 
-  Serial.begin(115200);
-  //while (!Serial);
-  Serial.println("LoRa 1ch-Gateway");
-  SPI.begin(SCK, MISO, MOSI, SS);
-  LoRa.setPins(SS, RST, DI0);
 
-  if (!LoRa.begin(BAND)) {
-    Serial.println("Starting LoRa failed!");
-    while (1);
-  }
-
-  // register the receive callback
-  //LoRa.onReceive(LoRa.parsePacket());
-
-  // put the radio into receive mode
-  LoRa.receive();
   display.setFont(ArialMT_Plain_16);
   display.drawString(0, 0, "GEOFISIKA-UGM");
   display.display();
@@ -86,7 +120,49 @@ void setup() {
 }
 
 void loop() {
-    onReceive(LoRa.parsePacket());
+    if(!listen()) return;
+    connectWifi();
+    writeThingSpeak();
+}
+
+bool listen(){
+  int packetSize = LoRa.parsePacket();
+  
+  if(packetSize == 0) return 0;
+
+  // read packet header bytes
+  int recipient = LoRa.read();          // recipient address
+  byte sender = LoRa.read();            // sender address
+  byte incomingMsgId = LoRa.read();     // incoming msg ID
+
+  int dataCandidate[3];                 // payload of packet
+
+  for (int i = 0; i < 3; ++i){
+    dataCandidate[i]   = LoRa.read();
+    dataCandidate[i] <<= 8;
+    dataCandidate[i]  |= LoRa.read();
+  }
+
+  // if the recipient isn't this device or broadcast,
+  if (recipient != _localAddress && recipient != 0xFF) {
+    DEBUG_PRINTLN("This message is not for me.");
+    return 0;                             // skip rest of function
+  }
+
+  _temp = dataCandidate[0];
+  _vbatSender = dataCandidate[1];
+  _vbatRepeater = dataCandidate[2];
+  _msgCount = incomingMsgId;
+
+  DEBUG_PRINT("Received ");
+  DEBUG_PRINTLN(" from: 0x" +String(sender, HEX)+
+                " to: 0x"   +String(recipient,HEX)+
+                " id:"      +String(incomingMsgId)+
+                " T"        +String(_temp)+" Sbat"+String(_vbatSender)+" Rbat"+String(_vbatRepeater)+
+                " RSSI:"    +String(LoRa.packetRssi())+
+                " snr:"     +String(LoRa.packetSnr())
+                );
+  return 1;
 }
 
 void printLCD(String message, int line){
@@ -96,57 +172,31 @@ void printLCD(String message, int line){
   display.display();
 }
 
-void onReceive(int packetSize) {
-  if (packetSize == 0) return;          // if there's no packet, return
-
-  // read packet header bytes:
-  int recipient = LoRa.read();          // recipient address
-  byte sender = LoRa.read();            // sender address
-  byte incomingMsgId = LoRa.read();     // incoming msg ID
-
-  int incoming = 0;                 // payload of packet
-
-  while (LoRa.available()) {
-    incoming <<= 8;                   // can't use readString() in callback, so
-    incoming |= LoRa.read();      // add bytes one by one
-  }
-
-  // if the recipient isn't this device or broadcast,
-  if (recipient != localAddress && recipient != 0xFF) {
-    Serial.println("This message is not for me.");
-    return;                             // skip rest of function
-  }
-
-  // if message is for this device, or broadcast, print details:
-  Serial.println("Received from: 0x" + String(sender, HEX));
-  Serial.println("Sent to: 0x" + String(recipient, HEX));
-  Serial.println("Message ID: " + String(incomingMsgId));
-  Serial.print("Message: "); Serial.println(incoming);
-  Serial.println("RSSI: " + String(LoRa.packetRssi()));
-  Serial.println("Snr: " + String(LoRa.packetSnr()));
-  Serial.println();
-
-  connectWifi();
-  writeThingSpeak(incoming);
-}
-
 void connectWifi(){
     if(WiFi.status() != WL_CONNECTED){
-    Serial.print("Attempting to connect to SSID: ");
-    Serial.println("anashandaru");
+    DEBUG_PRINT("Attempting to connect to SSID: ");
+    DEBUG_PRINTLN("anashandaru");
     while(WiFi.status() != WL_CONNECTED){
       WiFi.begin(ssid, pass); // Connect to WPA/WPA2 network. Change this line if using open or WEP network
-      Serial.print(".");
+      DEBUG_PRINT(".");
       delay(5000);     
     } 
-    Serial.println("\nConnected.");
+    DEBUG_PRINTLN("\nConnected.");
   }
 }
 
-void writeThingSpeak(int number){
-  // Write to ThingSpeak. There are up to 8 fields in a channel, allowing you to store up to 8 different
-  // pieces of information in a channel.  Here, we write to field 1.
-  int x = ThingSpeak.writeField(myChannelNumber, 1, number, myWriteAPIKey);
+void writeThingSpeak(){
+  // set the fields with the values
+  ThingSpeak.setField(1, _temp);
+  ThingSpeak.setField(2, _ph);
+  ThingSpeak.setField(3, _vbatSender);
+  ThingSpeak.setField(4, _vbatRepeater);
+  ThingSpeak.setField(5, LoRa.packetRssi());
+  ThingSpeak.setField(6, LoRa.packetSnr());
+
+  // write to the ThingSpeak channel
+  int x = ThingSpeak.writeFields(myChannelNumber, myWriteAPIKey);
+
   if(x == 200){
     Serial.println("Channel update successful.");
   }
