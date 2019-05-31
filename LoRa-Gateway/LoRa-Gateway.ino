@@ -42,15 +42,14 @@
   #define DEBUG_ATTACH()
 #endif
 
-  int _temp;
+  int _temp=0;
   int _ph;
   int _vbatSender;
   int _vbatRepeater;
   byte _msgCount;
   byte _localAddress = 0xBB;
-  long _lastSendTime;
-  long _interval;
-
+  long _lastReceiveTime;
+  long _lastupdate;
 
 //replace default pin  OLED_SDA=4, OLED_SCL=15 with  OLED_SDA=21, OLED_SCL=22
 #define OLED_SDA 4
@@ -69,12 +68,14 @@ SSD1306Wire  display(0x3c, OLED_SDA, OLED_SCL); // OLED_SDA=4, OLED_SCL=15
 WiFiClient client;
 
 void setup() {
+  _lastReceiveTime = millis();
   // Start LoRa
   SPI.begin(SCK, MISO, MOSI, SS);
   
   DEBUG_START(9600);
   while (DEBUG_WAIT)
-
+  DEBUG_PRINTLN("cek print");
+  
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
 
@@ -106,12 +107,8 @@ void setup() {
   display.clear();
   // aktivasi Oled END
 
-
-  display.setFont(ArialMT_Plain_16);
-  display.drawString(0, 0, "GEOFISIKA-UGM");
+  updateUI();
   display.display();
-  delay(1000);
-  display.clear();
 
   // Initialize ThingSpeak
   WiFi.mode(WIFI_STA);   
@@ -120,6 +117,10 @@ void setup() {
 }
 
 void loop() {
+    if(millis() - _lastupdate > 1000){
+      updateUI(); display.display();
+      _lastupdate = millis();
+    }
     if(!listen()) return;
     connectWifi();
     writeThingSpeak();
@@ -149,6 +150,7 @@ bool listen(){
     return 0;                             // skip rest of function
   }
 
+  _lastReceiveTime = millis();
   _temp = dataCandidate[0];
   _vbatSender = dataCandidate[1];
   _vbatRepeater = dataCandidate[2];
@@ -165,11 +167,31 @@ bool listen(){
   return 1;
 }
 
-void printLCD(String message, int line){
+void updateUI(){
   display.clear();
   display.setFont(ArialMT_Plain_10);
-  display.drawString(0, line*15, message);
-  display.display();
+  display.setTextAlignment(TEXT_ALIGN_RIGHT);
+  display.drawString(11, 0, "S");
+  display.drawString(53, 0, "R");
+  display.drawString(95, 0, "G");
+
+  display.drawProgressBar(12, 3, 30, 7, 50);
+  display.drawProgressBar(54, 3, 30, 7, 50);
+  display.drawProgressBar(96, 3, 30, 7, 50);
+
+  display.setFont(ArialMT_Plain_24);
+  display.setTextAlignment(TEXT_ALIGN_RIGHT);
+  display.drawString(75, 12, String((float)_temp/100,2));
+  display.setTextAlignment(TEXT_ALIGN_LEFT);
+  display.drawString(75, 12,"C");
+    
+  display.setFont(ArialMT_Plain_10);
+  display.setTextAlignment(TEXT_ALIGN_LEFT);
+  display.drawString(100, 15, "Wifi");
+  display.drawString(100, 25, String(WiFi.status() == WL_CONNECTED));
+  display.drawString(4, 38, "RSSI " + String(LoRa.packetRssi()));
+  display.drawString(64, 38, "SNR " + String(LoRa.packetSnr(),1));
+  display.drawString(4, 50, "Received " + String((millis()-_lastReceiveTime)/1000) + "s ago");
 }
 
 void connectWifi(){
@@ -187,7 +209,7 @@ void connectWifi(){
 
 void writeThingSpeak(){
   // set the fields with the values
-  ThingSpeak.setField(1, _temp);
+  ThingSpeak.setField(1, (float)_temp/100);
   ThingSpeak.setField(2, _ph);
   ThingSpeak.setField(3, _vbatSender);
   ThingSpeak.setField(4, _vbatRepeater);
