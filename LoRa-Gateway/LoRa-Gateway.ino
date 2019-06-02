@@ -43,17 +43,15 @@
 #endif
 
   int _temp=0;
-  int _ph;
-  int _vbatSender;
-  int _vbatRepeater;
+  int _rssi, _ph,_vbatSender, _vbatRepeater;
   byte _msgCount;
+  float _snr;
   byte _localAddress = 0xBB;
-  long _lastReceiveTime;
-  long _lastupdate;
+  long _lastReceiveTime, _lastupdate;
 
 //replace default pin  OLED_SDA=4, OLED_SCL=15 with  OLED_SDA=21, OLED_SCL=22
-#define OLED_SDA 4
-#define OLED_SCL 15
+#define OLED_SDA 21
+#define OLED_SCL 22
 #define OLED_RST 16
 #define LED_BUILTIN 2
 
@@ -155,6 +153,8 @@ bool listen(){
   _vbatSender = dataCandidate[1];
   _vbatRepeater = dataCandidate[2];
   _msgCount = incomingMsgId;
+  _rssi = LoRa.packetRssi();
+  _snr = LoRa.packetSnr();
 
   DEBUG_PRINT("Received ");
   DEBUG_PRINTLN(" from: 0x" +String(sender, HEX)+
@@ -189,8 +189,8 @@ void updateUI(){
   display.setTextAlignment(TEXT_ALIGN_LEFT);
   display.drawString(100, 15, "Wifi");
   display.drawString(100, 25, String(WiFi.status() == WL_CONNECTED));
-  display.drawString(4, 38, "RSSI " + String(LoRa.packetRssi()));
-  display.drawString(64, 38, "SNR " + String(LoRa.packetSnr(),1));
+  display.drawString(4, 38, "RSSI " + String(_rssi));
+  display.drawString(64, 38, "SNR " + String(_snr));
   display.drawString(4, 50, "Received " + String((millis()-_lastReceiveTime)/1000) + "s ago");
 }
 
@@ -213,8 +213,8 @@ void writeThingSpeak(){
   ThingSpeak.setField(2, _ph);
   ThingSpeak.setField(3, _vbatSender);
   ThingSpeak.setField(4, _vbatRepeater);
-  ThingSpeak.setField(5, LoRa.packetRssi());
-  ThingSpeak.setField(6, LoRa.packetSnr());
+  ThingSpeak.setField(5, _rssi);
+  ThingSpeak.setField(6, _snr);
 
   // write to the ThingSpeak channel
   int x = ThingSpeak.writeFields(myChannelNumber, myWriteAPIKey);
