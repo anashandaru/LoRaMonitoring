@@ -14,10 +14,10 @@
   #define SS      18
   #define RST     14
   #define DI0     26
-  #define VBATPIN A9
+  #define VBATPIN 36
   #define BAND    915E6
   #define SF      12
-  #define TXP     17
+  #define TXP     20
 
   #define DEBUG
 
@@ -124,6 +124,15 @@ void loop() {
     writeThingSpeak();
 }
 
+int bat2percent(int bat){
+  // converts adc reading to battery percentage (1 - 100)
+  // 3.2v(0%) to 4.2v(100%)
+  // 496 to 651, 651 - 496 = 155
+  int result = (bat-496)*2/3;
+  if(result>100) result = 100;
+  return result;
+}
+
 bool listen(){
   int packetSize = LoRa.parsePacket();
   
@@ -150,8 +159,8 @@ bool listen(){
 
   _lastReceiveTime = millis();
   _temp = dataCandidate[0];
-  _vbatSender = dataCandidate[1];
-  _vbatRepeater = dataCandidate[2];
+  _vbatSender = bat2percent(dataCandidate[1]);
+  _vbatRepeater = bat2percent(dataCandidate[2]);
   _msgCount = incomingMsgId;
   _rssi = LoRa.packetRssi();
   _snr = LoRa.packetSnr();
@@ -175,9 +184,9 @@ void updateUI(){
   display.drawString(53, 0, "R");
   display.drawString(95, 0, "G");
 
-  display.drawProgressBar(12, 3, 30, 7, 50);
-  display.drawProgressBar(54, 3, 30, 7, 50);
-  display.drawProgressBar(96, 3, 30, 7, 50);
+  display.drawProgressBar(12, 3, 30, 7, _vbatSender);
+  display.drawProgressBar(54, 3, 30, 7, _vbatRepeater);
+  display.drawProgressBar(96, 3, 30, 7, analogRead(VBATPIN));
 
   display.setFont(ArialMT_Plain_24);
   display.setTextAlignment(TEXT_ALIGN_RIGHT);
@@ -195,6 +204,7 @@ void updateUI(){
 }
 
 void connectWifi(){
+    return;
     if(WiFi.status() != WL_CONNECTED){
     DEBUG_PRINT("Attempting to connect to SSID: ");
     DEBUG_PRINTLN("anashandaru");
