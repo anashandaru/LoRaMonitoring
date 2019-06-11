@@ -127,8 +127,8 @@ void loop() {
 int bat2percent(int bat){
   // converts adc reading to battery percentage (1 - 100)
   // 3.2v(0%) to 4.2v(100%)
-  // 496 to 651, 651 - 496 = 155
-  int result = (bat-496)*2/3;
+  // 551 to 651, 651 - 551 = 100
+  int result = (bat-551);
   if(result>100) result = 100;
   return result;
 }
