@@ -204,15 +204,24 @@ void updateUI(){
 }
 
 void connectWifi(){
-    return;
+    //return;//uncommnet this to log without wifi
     if(WiFi.status() != WL_CONNECTED){
     DEBUG_PRINT("Attempting to connect to SSID: ");
     DEBUG_PRINTLN("anashandaru");
-    while(WiFi.status() != WL_CONNECTED){
-      WiFi.begin(ssid, pass); // Connect to WPA/WPA2 network. Change this line if using open or WEP network
-      DEBUG_PRINT(".");
-      delay(5000);     
-    } 
+    for(int i=0;i<3;i++){
+      if(WiFi.status() == WL_CONNECTED) break;
+      WiFi.begin(ssid, pass);
+      DEBUG_PRINT("Number of attemp : ");
+      DEBUG_PRINTLN(i+1);
+      delay(5000);
+    }
+    
+//    while(WiFi.status() != WL_CONNECTED){
+//      WiFi.begin(ssid, pass); // Connect to WPA/WPA2 network. Change this line if using open or WEP network
+//      DEBUG_PRINT(".");
+//      delay(5000);     
+//    }
+     
     DEBUG_PRINTLN("\nConnected.");
   }
 }
