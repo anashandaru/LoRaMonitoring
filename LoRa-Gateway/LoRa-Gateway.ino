@@ -14,7 +14,7 @@
   #define SS      18
   #define RST     14
   #define DI0     26
-  #define VBATPIN 36
+  #define BATPIN  35
   #define BAND    915E6
   #define SF      12
   #define TXP     20
@@ -143,9 +143,9 @@ bool listen(){
   byte sender = LoRa.read();            // sender address
   byte incomingMsgId = LoRa.read();     // incoming msg ID
 
-  int dataCandidate[3];                 // payload of packet
+  int dataCandidate[4];                 // payload of packet
 
-  for (int i = 0; i < 3; ++i){
+  for (int i = 0; i < 4; ++i){
     dataCandidate[i]   = LoRa.read();
     dataCandidate[i] <<= 8;
     dataCandidate[i]  |= LoRa.read();
@@ -159,8 +159,9 @@ bool listen(){
 
   _lastReceiveTime = millis();
   _temp = dataCandidate[0];
-  _vbatSender = bat2percent(dataCandidate[1]);
-  _vbatRepeater = bat2percent(dataCandidate[2]);
+  _ph = dataCandidate[1];
+  _vbatSender = bat2percent(dataCandidate[2]);
+  _vbatRepeater = bat2percent(dataCandidate[3]);
   _msgCount = incomingMsgId;
   _rssi = LoRa.packetRssi();
   _snr = LoRa.packetSnr();
@@ -186,7 +187,7 @@ void updateUI(){
 
   display.drawProgressBar(12, 3, 30, 7, _vbatSender);
   display.drawProgressBar(54, 3, 30, 7, _vbatRepeater);
-  display.drawProgressBar(96, 3, 30, 7, analogRead(VBATPIN));
+  display.drawProgressBar(96, 3, 30, 7, getBattery());
 
   display.setFont(ArialMT_Plain_24);
   display.setTextAlignment(TEXT_ALIGN_RIGHT);
@@ -200,7 +201,12 @@ void updateUI(){
   display.drawString(100, 25, String(WiFi.status() == WL_CONNECTED));
   display.drawString(4, 38, "RSSI " + String(_rssi));
   display.drawString(64, 38, "SNR " + String(_snr));
-  display.drawString(4, 50, "Received " + String((millis()-_lastReceiveTime)/1000) + "s ago");
+  display.drawString(4, 50, "Updated " + String((millis()-_lastReceiveTime)/1000) + "s ago");
+}
+
+int getBattery(){
+  if((analogRead(BATPIN))>2350) return 100;
+  return (analogRead(BATPIN)-1850)/6;
 }
 
 void connectWifi(){
@@ -229,11 +235,12 @@ void connectWifi(){
 void writeThingSpeak(){
   // set the fields with the values
   ThingSpeak.setField(1, (float)_temp/100);
-  ThingSpeak.setField(2, _ph);
+  ThingSpeak.setField(2, (float)_ph/100);
   ThingSpeak.setField(3, _vbatSender);
   ThingSpeak.setField(4, _vbatRepeater);
   ThingSpeak.setField(5, _rssi);
   ThingSpeak.setField(6, _snr);
+  ThingSpeak.setField(7, getBattery());
 
   // write to the ThingSpeak channel
   int x = ThingSpeak.writeFields(myChannelNumber, myWriteAPIKey);

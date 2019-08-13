@@ -7,7 +7,7 @@ byte localAddress = 0xAA;
 byte destination = 0xBB;
 long interval = 256000;
 //long interval = 16000;
-int dummy = 10;
+//int dummy = 10;
 
 Telekelud kld(localAddress,destination,interval);
 
@@ -15,7 +15,7 @@ void setup() {
   kld.start();
   kld.configure();
   kld.listenMode();
-  delay(10000);
+  //delay(10000);
 }
 
 void loop() {
