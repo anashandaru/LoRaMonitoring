@@ -3,9 +3,10 @@
 #include <Adafruit_MLX90614.h>
 #include <OneWire.h> 
 #include <DallasTemperature.h>
+#include <MedianFilterLib.h>
 	
 	// Define DS18B20 data pin
-	#define dsPin 4
+	#define dsPin 10
     // Define Trig and Echo pin:
     #define trigPin 14
     #define echoPin 15
@@ -24,7 +25,8 @@ void setup(void)
   
   Serial.begin(9600); // for debuging purposes
 
-  Serial1.begin(9600); // C02 gas sensor interface  
+  Serial1.begin(9600); // C02 gas sensor interface
+  //ads.setGain(GAIN_ONE);  
   ads.begin(); // pH and TDS ADC
   mlx.begin(); // Contactless IR thermometer
   ds.begin(); // DS18B20 thermistor
@@ -39,7 +41,7 @@ void loop(void)
   Serial.print(getTDS()); Serial.print(",");
   Serial.print(getDistance()); Serial.println();
   
-  //delay(1000);
+  delay(1000);
 }
 
 float getDSTemp(){
@@ -52,19 +54,18 @@ float getIRTemp(){
 }
 
 float getPH(){
-	float multiplier = 0.1875F;
-	return ads.readADC_Differential_0_1()*multiplier;
+	return (float)ads.readADC_SingleEnded(0)/(float)ads.readADC_SingleEnded(1)*5*3.5;
 }
 
 float getTDS(){
-	float multiplier = 0.1875F;
-	return ads.readADC_Differential_2_3()*multiplier;
+  float multiplier = 0.0001875F;
+	return ads.readADC_SingleEnded(1)*multiplier;
 }
 
 long getCO2(){
   long hi,lo,CO2;
 	Serial1.write(hexdata,9);
-	delay(500);
+	//delay(100);
 
 	for(int i=0,j=0;i<9;i++){
 		if (Serial1.available()>0){
