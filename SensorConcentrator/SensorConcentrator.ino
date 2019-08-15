@@ -17,72 +17,64 @@ Adafruit_ADS1115 ads; // 16-bit ADC for pH and TDS sensor
 Adafruit_MLX90614 mlx = Adafruit_MLX90614(); // Contactless infrared temperature sensor
 unsigned char hexdata[9] = {0xFF,0x01,0x86,0x00,0x00,0x00,0x00,0x00,0x79}; //Read the gas density command for CO2 gas sensor
 
-void setup(void)
-{
-  // Define inputs and outputs
-  pinMode(trigPin, OUTPUT);
-  pinMode(echoPin, INPUT);
-  
-  Serial.begin(9600); // for debuging purposes
+class Sensor {
+public:
+  virtual float getReading(){
+    return 0.0;
+  }
 
-  Serial1.begin(9600); // C02 gas sensor interface
-  //ads.setGain(GAIN_ONE);  
-  ads.begin(); // pH and TDS ADC
-  mlx.begin(); // Contactless IR thermometer
-  ds.begin(); // DS18B20 thermistor
-}
+  float getMedian(int nsample){
+    return 0.0;
+  }
+};
 
-void loop(void)
-{ 
-  Serial.print(getCO2()); Serial.print(",");
-  Serial.print(getDSTemp()); Serial.print(",");
-  Serial.print(getIRTemp()); Serial.print(",");
-  Serial.print(getPH()); Serial.print(",");
-  Serial.print(getTDS()); Serial.print(",");
-  Serial.print(getDistance()); Serial.println();
-  
-  delay(1000);
-}
+class Ds18b20 : public Sensor{
+public:
+  float getReading(){
+    ds.requestTemperatures();   
+    return ds.getTempCByIndex(0);
+  }
+};
 
-float getDSTemp(){
-	ds.requestTemperatures();		
-	return ds.getTempCByIndex(0);
-}
-
-float getIRTemp(){
-	return mlx.readObjectTempC();
-}
-
-float getPH(){
-	return (float)ads.readADC_SingleEnded(0)/(float)ads.readADC_SingleEnded(1)*5*3.5;
-}
-
-float getTDS(){
-  float multiplier = 0.0001875F;
-	return ads.readADC_SingleEnded(1)*multiplier;
-}
-
-long getCO2(){
-  long hi,lo,CO2;
-	Serial1.write(hexdata,9);
-	//delay(100);
-
-	for(int i=0,j=0;i<9;i++){
-		if (Serial1.available()>0){
-     		int ch=Serial1.read();
-
-    		if(i==2){hi=ch;}   //High concentration
-    		if(i==3){lo=ch;}   //Low concentration
-    		if(i==8){CO2=hi*256+lo;}  //CO2 concentration
-    }
+class Mlx90614 : public Sensor{
+public:
+	float getReading(){
+		return mlx.readObjectTempC();
 	}
-  return CO2;
-}
+};
 
+class Phdfrobot : public Sensor{
+public:
+	float getReading(){
+		return (float)ads.readADC_SingleEnded(0)/(float)ads.readADC_SingleEnded(1)*5*3.5;
+	}
+};
 
-float getDistance(){
+class Mhz16 : public Sensor{
+public:
+	float getReading(){
+		long hi,lo,CO2;
+		Serial1.write(hexdata,9);
+		//delay(100);
+
+		for(int i=0,j=0;i<9;i++){
+			if (Serial1.available()>0){
+     			int ch=Serial1.read();
+
+    			if(i==2){hi=ch;}   //High concentration
+    			if(i==3){lo=ch;}   //Low concentration
+    			if(i==8){CO2=hi*256+lo;}  //CO2 concentration
+    		}
+		}
+  		return (float) CO2;
+	}
+};
+
+class Jsn04t : public Sensor{
+public:
+	float getReading(){
 	long duration;
-  float distance;
+    float distance;
 
 	// Clear the trigPin by setting it LOW:
 	digitalWrite(trigPin, LOW);
@@ -100,4 +92,41 @@ float getDistance(){
 	distance = duration*0.034/2;
 
 	return distance;
+	}
+};
+
+class Tdsdfrobot : public Sensor{
+public:
+	float getReading(){
+		return 0.0;
+	}
+};
+
+void setup(void)
+{
+  // Define inputs and outputs
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+  
+  Serial.begin(9600); // for debuging purposes
+  while(!Serial);
+  Serial1.begin(9600); // C02 gas sensor interface
+  //ads.setGain(GAIN_ONE);  
+  ads.begin(); // pH and TDS ADC
+  mlx.begin(); // Contactless IR thermometer
+  ds.begin(); // DS18B20 thermistor
+}
+
+void loop(void)
+{ 
+  Ds18b20 tm1; Mlx90614 tm2; Phdfrobot phr;
+  Tdsdfrobot tds; Jsn04t dis; Mhz16 gas;
+  Serial.print(gas.getReading()); Serial.print(",");
+  Serial.print(tm1.getReading()); Serial.print(",");
+  Serial.print(tm2.getReading()); Serial.print(",");
+  Serial.print(phr.getReading()); Serial.print(",");
+  Serial.print(tds.getReading()); Serial.print(",");
+  Serial.print(dis.getReading()); Serial.println();
+  
+  delay(1000);
 }
