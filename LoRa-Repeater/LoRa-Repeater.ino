@@ -4,7 +4,7 @@
 #include <Telekelud.h>
 
 byte localAddress = 0xAA;
-byte destination = 0xBB;
+byte destination = 0xBC;
 long interval = 256000;
 //long interval = 16000;
 //int dummy = 10;
@@ -19,5 +19,6 @@ void setup() {
 }
 
 void loop() {
-  kld.repeaterServicePS();
+  //kld.repeaterServicePS();
+  kld.repeaterService();
 }

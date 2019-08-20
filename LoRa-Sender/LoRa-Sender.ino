@@ -2,39 +2,70 @@
 #include <LoRa.h>
 #include <Adafruit_SleepyDog.h>
 #include <Telekelud.h>
-#include <SparkFunMAX31855k.h> 
+#include <SparkFunMAX31855k.h>
+#include <Wire.h>
+#include <I2C_Anything.h>
 
 #define MAXCS   1
 
-byte localAddress = 0xCC;
-byte destination = 0xAA;
+const byte MY_ADDRESS = 42;
+const byte localAddress = 0xCC;
+const byte destination = 0xAA;
 long interval = 256000;
 //long interval = 16000;
 //int dummy = 10;
 
 SparkFunMAX31855k probe(MAXCS);
 Telekelud kld(localAddress,destination,interval);
+volatile datpac packet;
+datpac truePac;
+volatile boolean dataUpdated = false;
 
 void setup() {
+    pinMode(13, OUTPUT);
+    digitalWrite(13, LOW);
+    Wire.begin (MY_ADDRESS);
+    Wire.onReceive (receiveEvent);
+
     kld.start();
     kld.configure();
     delay(4000); // Let IC stabilize or first readings will be garbage
-    kld.setSenderBatt(analogRead(VBATPIN));
-    kld.setTemp(readTemp());
-    kld.setPH(readCJT());
     kld.sendMessage();
     //delay(10000); // Let IC stabilize or first readings will be garbage
-
 }
 
 void loop() {
-  kld.sleep();
+  //kld.sleep();
+  digitalWrite(13, HIGH);
+  if(!dataUpdated) return;
   delay(4000);
-  kld.setSenderBatt(analogRead(VBATPIN));
-  kld.setTemp(readTemp());
-  kld.setPH(readCJT());
+  digitalWrite(13, LOW);
+  truePac.gas = packet.gas;
+  truePac.tm1 = packet.tm2;
+  truePac.tm2 = packet.tm1;
+  truePac.ph = packet.ph;
+  truePac.tds = packet.tds;
+  truePac.dis = packet.dis;
+  kld.setPacket(truePac);
   kld.sendMessage();
+  delay(4000);
 }
+
+// called by interrupt service routine when incoming data arrives
+void receiveEvent (int howMany)
+ {
+ if (howMany >= 24)
+   {
+   Serial.println("Hit");
+   I2C_readAnything (packet.gas); 
+   I2C_readAnything (packet.tm1); 
+   I2C_readAnything (packet.tm2); 
+   I2C_readAnything (packet.ph); 
+   I2C_readAnything (packet.tds); 
+   I2C_readAnything (packet.dis); 
+   dataUpdated = true;     
+   }  // end if have enough data
+ }  // end of receiveEvent
 
 int readTemp(){
 	// Make sure SPI for LoRa set to HIGH (inactive)
