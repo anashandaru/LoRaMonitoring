@@ -4,7 +4,7 @@
 #include <Telekelud.h>
 
 byte localAddress = 0xAA;
-byte destination = 0xBC;
+byte destination = 0xBB;
 long interval = 256000;
 //long interval = 16000;
 //int dummy = 10;

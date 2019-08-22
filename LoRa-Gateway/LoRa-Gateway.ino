@@ -42,8 +42,25 @@
   #define DEBUG_ATTACH()
 #endif
 
-  int _temp=0;
-  int _rssi, _ph,_vbatSender, _vbatRepeater;
+struct datpac
+{
+  float gas;
+  float tm1;
+  float tm2;
+  float ph;
+  float tds;
+  float dis;
+};
+
+struct batpac
+{
+  float sender;
+  float repeater;
+};
+
+  datpac _packet;
+  batpac _batt;
+  int _rssi;
   byte _msgCount;
   float _snr;
   byte _localAddress = 0xBB;
@@ -55,10 +72,10 @@
 #define OLED_RST 16
 #define LED_BUILTIN 2
 
-char ssid[] = "anashandaru";   // your network SSID (name) 
+char ssid[] = "anashandaru";   // your network SSID (name)
 char pass[] = "anashandaru";   // your network password
-unsigned long myChannelNumber = 785978;  // replace 0000000 with your channel number
-const char * myWriteAPIKey = "XHFH9125894EN04Y";   // replace XYZ with your channel write API Key
+unsigned long myChannelNumber = 849437;  // replace 0000000 with your channel number
+const char * myWriteAPIKey = "1IK2044LXJ8TJZQP";   // replace XYZ with your channel write API Key
 
 // Initialize the OLED display using Wire library
 SSD1306Wire  display(0x3c, OLED_SDA, OLED_SCL); // OLED_SDA=4, OLED_SCL=15
@@ -69,11 +86,11 @@ void setup() {
   _lastReceiveTime = millis();
   // Start LoRa
   SPI.begin(SCK, MISO, MOSI, SS);
-  
+
   DEBUG_START(9600);
   while (DEBUG_WAIT)
   DEBUG_PRINTLN("cek print");
-  
+
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
 
@@ -84,10 +101,10 @@ void setup() {
   }
 
   DEBUG_PRINTLN("LoRa init succeeded.");
-  
+
   LoRa.setSpreadingFactor(SF);
   LoRa.setTxPower(TXP);
-  
+
   LoRa.receive();
 
   // START aktivas Oled
@@ -109,7 +126,7 @@ void setup() {
   display.display();
 
   // Initialize ThingSpeak
-  WiFi.mode(WIFI_STA);   
+  WiFi.mode(WIFI_STA);
   ThingSpeak.begin(client);
   connectWifi();
 }
@@ -135,21 +152,13 @@ int bat2percent(int bat){
 
 bool listen(){
   int packetSize = LoRa.parsePacket();
-  
+
   if(packetSize == 0) return 0;
 
   // read packet header bytes
   int recipient = LoRa.read();          // recipient address
   byte sender = LoRa.read();            // sender address
   byte incomingMsgId = LoRa.read();     // incoming msg ID
-
-  int dataCandidate[4];                 // payload of packet
-
-  for (int i = 0; i < 4; ++i){
-    dataCandidate[i]   = LoRa.read();
-    dataCandidate[i] <<= 8;
-    dataCandidate[i]  |= LoRa.read();
-  }
 
   // if the recipient isn't this device or broadcast,
   if (recipient != _localAddress && recipient != 0xFF) {
@@ -158,22 +167,31 @@ bool listen(){
   }
 
   _lastReceiveTime = millis();
-  _temp = dataCandidate[0];
-  _ph = dataCandidate[1];
-  _vbatSender = bat2percent(dataCandidate[2]);
-  _vbatRepeater = bat2percent(dataCandidate[3]);
+
+  readFloat(_packet.gas);
+  readFloat(_packet.tm1);
+  readFloat(_packet.tm2);
+  readFloat(_packet.ph);
+  readFloat(_packet.tds);
+  readFloat(_packet.dis);
+  readFloat(_batt.sender);
+  readFloat(_batt.repeater);
+
   _msgCount = incomingMsgId;
   _rssi = LoRa.packetRssi();
   _snr = LoRa.packetSnr();
 
-  DEBUG_PRINT("Received ");
-  DEBUG_PRINTLN(" from: 0x" +String(sender, HEX)+
-                " to: 0x"   +String(recipient,HEX)+
-                " id:"      +String(incomingMsgId)+
-                " T"        +String(_temp)+" Sbat"+String(_vbatSender)+" Rbat"+String(_vbatRepeater)+
-                " RSSI:"    +String(LoRa.packetRssi())+
-                " snr:"     +String(LoRa.packetSnr())
-                );
+  DEBUG_PRINT("Received :");
+  DEBUG_PRINT(_packet.gas); DEBUG_PRINT(",");
+  DEBUG_PRINT(_packet.tm1); DEBUG_PRINT(",");
+  DEBUG_PRINT(_packet.tm2); DEBUG_PRINT(",");
+  DEBUG_PRINT(_packet.ph); DEBUG_PRINT(",");
+  DEBUG_PRINT(_packet.tds); DEBUG_PRINT(",");
+  DEBUG_PRINT(_packet.dis); DEBUG_PRINT(",");
+  DEBUG_PRINT(_batt.sender); DEBUG_PRINT(",");
+  DEBUG_PRINT(_packet.repeater); DEBUG_PRINT(",");
+  DEBUG_PRINTLN("ends");
+
   return 1;
 }
 
@@ -185,16 +203,16 @@ void updateUI(){
   display.drawString(53, 0, "R");
   display.drawString(95, 0, "G");
 
-  display.drawProgressBar(12, 3, 30, 7, _vbatSender);
-  display.drawProgressBar(54, 3, 30, 7, _vbatRepeater);
+  display.drawProgressBar(12, 3, 30, 7, _batt.sender);
+  display.drawProgressBar(54, 3, 30, 7, _batt.repeater);
   display.drawProgressBar(96, 3, 30, 7, getBattery());
 
   display.setFont(ArialMT_Plain_24);
   display.setTextAlignment(TEXT_ALIGN_RIGHT);
-  display.drawString(75, 12, String((float)_temp/100,2));
+  display.drawString(75, 12, String((float)_packet.tm1/100,2));
   display.setTextAlignment(TEXT_ALIGN_LEFT);
   display.drawString(75, 12,"C");
-    
+
   display.setFont(ArialMT_Plain_10);
   display.setTextAlignment(TEXT_ALIGN_LEFT);
   display.drawString(100, 15, "Wifi");
@@ -216,31 +234,26 @@ void connectWifi(){
     DEBUG_PRINTLN("anashandaru");
     for(int i=0;i<3;i++){
       if(WiFi.status() == WL_CONNECTED) break;
-      WiFi.begin(ssid, pass);
+      WiFi.begin(ssid, pass);  // Connect to WPA/WPA2 network. Change this line if using open or WEP network
       DEBUG_PRINT("Number of attemp : ");
       DEBUG_PRINTLN(i+1);
       delay(5000);
     }
-    
-//    while(WiFi.status() != WL_CONNECTED){
-//      WiFi.begin(ssid, pass); // Connect to WPA/WPA2 network. Change this line if using open or WEP network
-//      DEBUG_PRINT(".");
-//      delay(5000);     
-//    }
-     
+
     DEBUG_PRINTLN("\nConnected.");
   }
 }
 
 void writeThingSpeak(){
   // set the fields with the values
-  ThingSpeak.setField(1, (float)_temp/100);
-  ThingSpeak.setField(2, (float)_ph/100);
-  ThingSpeak.setField(3, _vbatSender);
-  ThingSpeak.setField(4, _vbatRepeater);
-  ThingSpeak.setField(5, _rssi);
-  ThingSpeak.setField(6, _snr);
-  ThingSpeak.setField(7, getBattery());
+  ThingSpeak.setField(1, _packet.gas);
+  ThingSpeak.setField(2, _packet.tm1);
+  ThingSpeak.setField(3, _packet.tm2);
+  ThingSpeak.setField(4, _packet.ph);
+  ThingSpeak.setField(5, _packet.tds;
+  ThingSpeak.setField(6, _packet.dis);
+  ThingSpeak.setField(7, _batt.sender);
+  ThingSpeak.setField(8, _batt.repeater);
 
   // write to the ThingSpeak channel
   int x = ThingSpeak.writeFields(myChannelNumber, myWriteAPIKey);
