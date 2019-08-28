@@ -41,8 +41,8 @@ void loop() {
   delay(4000);
   digitalWrite(13, LOW);
   truePac.gas = packet.gas;
-  truePac.tm1 = packet.tm2;
-  truePac.tm2 = packet.tm1;
+  truePac.tm1 = packet.tm1;
+  truePac.tm2 = packet.tm2;
   truePac.ph = packet.ph;
   truePac.tds = packet.tds;
   truePac.dis = packet.dis;

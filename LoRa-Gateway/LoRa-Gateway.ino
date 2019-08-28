@@ -189,10 +189,18 @@ bool listen(){
   DEBUG_PRINT(_packet.tds); DEBUG_PRINT(",");
   DEBUG_PRINT(_packet.dis); DEBUG_PRINT(",");
   DEBUG_PRINT(_batt.sender); DEBUG_PRINT(",");
-  DEBUG_PRINT(_packet.repeater); DEBUG_PRINT(",");
+  DEBUG_PRINT(_batt.repeater); DEBUG_PRINT(",");
   DEBUG_PRINTLN("ends");
 
   return 1;
+}
+
+void readFloat(float& value){
+  byte * p = (byte*) &value;
+  for (int i = 0; i < 4; ++i)
+  {
+    *p++ = LoRa.read();
+  }
 }
 
 void updateUI(){
@@ -209,7 +217,7 @@ void updateUI(){
 
   display.setFont(ArialMT_Plain_24);
   display.setTextAlignment(TEXT_ALIGN_RIGHT);
-  display.drawString(75, 12, String((float)_packet.tm1/100,2));
+  display.drawString(75, 12, String(_packet.tm1,2));
   display.setTextAlignment(TEXT_ALIGN_LEFT);
   display.drawString(75, 12,"C");
 
@@ -250,7 +258,7 @@ void writeThingSpeak(){
   ThingSpeak.setField(2, _packet.tm1);
   ThingSpeak.setField(3, _packet.tm2);
   ThingSpeak.setField(4, _packet.ph);
-  ThingSpeak.setField(5, _packet.tds;
+  ThingSpeak.setField(5, _packet.tds);
   ThingSpeak.setField(6, _packet.dis);
   ThingSpeak.setField(7, _batt.sender);
   ThingSpeak.setField(8, _batt.repeater);
