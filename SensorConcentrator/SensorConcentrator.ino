@@ -5,15 +5,11 @@
 #include <OneWire.h> 
 #include <DallasTemperature.h>
 #include <MedianFilterLib.h>
-#include <NewPing.h>
+#include <VL53L1X.h>
 #include "GravityTDS.h"
   
-	// Define DS18B20 data pin
-	#define dsPin 10
-    // Define Trig and Echo pin:
-    #define trigPin 14
-    #define echoPin 15
-    #define MAX_DISTANCE 1000
+	  // Define DS18B20 data pin
+	  #define dsPin 9
 
 const byte SLAVE_ADDRESS = 42;
 int nsample = 10;
@@ -25,7 +21,7 @@ DeviceAddress tempSensor = {0x28, 0x2F, 0xDA, 0x46, 0x92, 0x15, 0x2, 0x4E};
 Adafruit_ADS1115 ads; // 16-bit ADC for pH and TDS sensor
 Adafruit_MLX90614 mlx = Adafruit_MLX90614(); // Contactless infrared temperature sensor
 unsigned char hexdata[9] = {0xFF,0x01,0x86,0x00,0x00,0x00,0x00,0x00,0x79}; //Read the gas density command for CO2 gas sensor
-NewPing sonar = NewPing(trigPin, echoPin, MAX_DISTANCE); // Ultrasonic distance measuremenmt
+VL53L1X lidar;
 GravityTDS gravityTds; // TDS object
 
 class Sensor {
@@ -37,6 +33,7 @@ public:
   float getMedian(){
     for (int i = 0; i < nsample-1; ++i){
     	medianFilter.AddValue(getReading());
+      delay(5); //stability
     }
     float result = medianFilter.AddValue(getReading());
     return result;
@@ -85,20 +82,12 @@ public:
 	}
 };
 
-class Jsn04t : public Sensor{
-public:
-	float getReading(){
-    float r = sonar.ping_cm();
-    // ignore invalid value and retry to measure up to 10 time    
-    if(r < 0.1){
-      for(int i=0;i<20;i++){
-        r = sonar.ping_cm();
-        if(r > 0.1) break;
-      }
+class Vl53l1x : public Sensor{
+  public:
+    float getReading(){
+      float r = lidar.read();
+      return r;
     }
-    
-    return r;
-	}
 };
 
 class Tdsdfrobot : public Sensor{
@@ -113,10 +102,9 @@ public:
 
 void setup(void)
 {
-  // Define inputs and outputs
-  pinMode(trigPin, OUTPUT);
-  pinMode(echoPin, INPUT);
-    
+  Serial.begin(9600);
+  //while(!Serial);
+  Serial.println("Sensor Concentrator");
   Wire.begin ();
   Serial1.begin(9600); // C02 gas sensor interface
   //ads.setGain(GAIN_ONE);  
@@ -124,14 +112,22 @@ void setup(void)
   mlx.begin(); // Contactless IR thermometer
   ds.begin(); // DS18B20 thermistor
   ds.setResolution(tempSensor, 11);
+    lidar.setTimeout(500);
+    lidar.init();
+    lidar.setDistanceMode(VL53L1X::Long);
+    lidar.setMeasurementTimingBudget(50000);
+    lidar.startContinuous(50);
+
   gravityTds.begin(); // gravity Tds
+
+  Serial.println("All sensor set");
 }
 
 void loop(void)
 { 
   float Tgas, Ttm1, Ttm2, Tphr, Ttds, Tdis;
   Ds18b20 tm1; Mlx90614 tm2; Phdfrobot phr;
-  Tdsdfrobot tds; Jsn04t dis; Mhz16 gas;
+  Tdsdfrobot tds; Vl53l1x dis; Mhz16 gas;
 
   Tgas = gas.getReading();
   Ttm1 = tm1.getMedian();
@@ -139,6 +135,13 @@ void loop(void)
   Tphr = phr.getMedian();
   Ttds = tds.getMedian();
   Tdis = dis.getMedian();
+
+  Serial.print(Tgas); Serial.print(", ");
+  Serial.print(Ttm1); Serial.print(", ");
+  Serial.print(Ttm2); Serial.print(", ");
+  Serial.print(Tphr); Serial.print(", ");
+  Serial.print(Ttds); Serial.print(", ");
+  Serial.println(Tdis);
 
   Wire.beginTransmission (SLAVE_ADDRESS);
   I2C_writeAnything (Tgas);
